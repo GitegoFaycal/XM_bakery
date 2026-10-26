@@ -1,19 +1,28 @@
-import { createClient } from '@libsql/client';
 import dotenv from 'dotenv';
 
 dotenv.config();
 
 // Local development: a SQLite file next to the backend (no server to run).
 // Production (Vercel): a Turso database, configured through env vars.
-const url = process.env.TURSO_DATABASE_URL || 'file:local.db';
+let url = process.env.TURSO_DATABASE_URL || 'file:local.db';
 const authToken = process.env.TURSO_AUTH_TOKEN;
 
 if (process.env.VERCEL && url.startsWith('file:')) {
+  // /var/task is read-only on Vercel; /tmp is the only writable place. Data
+  // there is throwaway, so this only keeps the API alive until Turso is set.
+  url = 'file:/tmp/xm-bakery.db';
   console.warn(
-    'TURSO_DATABASE_URL is not set. A file database does not persist on Vercel; ' +
-      'add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in the project settings.',
+    'TURSO_DATABASE_URL is not set. Using a temporary file database that does NOT ' +
+      'persist; add TURSO_DATABASE_URL and TURSO_AUTH_TOKEN in the Vercel project settings.',
   );
 }
+
+// Remote Turso URLs use the pure-JS web client (no native binary to load in a
+// serverless function). File URLs need the native client.
+const isRemote = /^(libsql|https?|wss?):\/\//.test(url);
+const { createClient } = isRemote
+  ? await import('@libsql/client/web')
+  : await import('@libsql/client');
 
 const db = createClient({ url, authToken });
 
