@@ -12,6 +12,7 @@ import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import ManageProducts from './pages/ManageProducts.jsx';
+import ManageOrders from './pages/ManageOrders.jsx';
 import NotFound from './pages/NotFound.jsx';
 
 export default function App() {
@@ -29,8 +30,10 @@ export default function App() {
         <Route path="login" element={<Login />} />
         <Route path="register" element={<Register />} />
 
-        <Route element={<ProtectedRoute />}>
+        {/* Staff area: admin role required. */}
+        <Route element={<ProtectedRoute adminOnly />}>
           <Route path="dashboard" element={<Dashboard />} />
+          <Route path="dashboard/orders" element={<ManageOrders />} />
           <Route path="dashboard/products" element={<ManageProducts />} />
         </Route>
 

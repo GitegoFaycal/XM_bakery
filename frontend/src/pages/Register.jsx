@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link, Navigate, useNavigate } from 'react-router-dom';
+import { Link, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { Croissant } from 'lucide-react';
 import { useAuth } from '../context/AuthContext.jsx';
 import { useToast } from '../context/ToastContext.jsx';
@@ -16,16 +16,18 @@ function validate(form) {
 }
 
 export default function Register() {
-  const { register, login, isAuthenticated } = useAuth();
+  const { register, isAuthenticated, user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
+  const location = useLocation();
+  const from = location.state?.from;
 
   const [form, setForm] = useState({ name: '', email: '', password: '', confirm: '' });
   const [errors, setErrors] = useState({});
   const [serverError, setServerError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (isAuthenticated) return <Navigate to="/dashboard" replace />;
+  if (isAuthenticated) return <Navigate to={from || (user?.role === 'admin' ? '/dashboard' : '/orders')} replace />;
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -38,11 +40,13 @@ export default function Register() {
 
     setSubmitting(true);
     try {
-      await register({ name: form.name.trim(), email: form.email.trim(), password: form.password });
-      // The register endpoint only returns an id, so log in right away.
-      await login({ email: form.email.trim(), password: form.password });
-      toast.success(`Account created. Welcome, ${form.name.trim()}!`);
-      navigate('/dashboard', { replace: true });
+      const created = await register({
+        name: form.name.trim(),
+        email: form.email.trim(),
+        password: form.password,
+      });
+      toast.success(`Account created. Welcome, ${created.name}!`);
+      navigate(from || (created.role === 'admin' ? '/dashboard' : '/products'), { replace: true });
     } catch (err) {
       setServerError(err.message);
     } finally {
@@ -57,7 +61,7 @@ export default function Register() {
           <Croissant className="h-7 w-7" />
         </span>
         <h1 className="mt-4 font-display text-3xl font-bold text-stone-900">Create your account</h1>
-        <p className="mt-1 text-sm text-stone-500">Order ahead and keep track of your favourites.</p>
+        <p className="mt-1 text-sm text-stone-500">Keep your order history and check out faster.</p>
       </div>
 
       <form

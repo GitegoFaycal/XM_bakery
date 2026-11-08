@@ -1,5 +1,6 @@
 import express from 'express';
 import db, { toId } from '../config/db.js';
+import { requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
 
@@ -12,8 +13,8 @@ const serialise = (row) => ({
   created_at: row.created_at,
 });
 
-// POST /api/products -> 201 { message, productId }
-router.post('/', async (req, res, next) => {
+// POST /api/products (admin) -> 201 { message, productId }
+router.post('/', requireAdmin, async (req, res, next) => {
   const { name, category, price, quantity } = req.body;
 
   if (!name || !price || quantity === undefined || quantity === null || quantity === '') {
@@ -47,21 +48,16 @@ router.get('/', async (req, res, next) => {
 // GET /api/products/:id -> 200 product | 404
 router.get('/:id', async (req, res, next) => {
   try {
-    const result = await db.execute({
-      sql: 'SELECT * FROM products WHERE id = ?',
-      args: [req.params.id],
-    });
-    if (result.rows.length === 0) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
+    const result = await db.execute({ sql: 'SELECT * FROM products WHERE id = ?', args: [req.params.id] });
+    if (result.rows.length === 0) return res.status(404).json({ message: 'Product not found' });
     res.status(200).json(serialise(result.rows[0]));
   } catch (err) {
     next(err);
   }
 });
 
-// PUT /api/products/:id -> 200 { message } | 404
-router.put('/:id', async (req, res, next) => {
+// PUT /api/products/:id (admin) -> 200 { message } | 404
+router.put('/:id', requireAdmin, async (req, res, next) => {
   const { name, category, price, quantity } = req.body;
 
   if (!name || price === undefined || quantity === undefined) {
@@ -73,25 +69,49 @@ router.put('/:id', async (req, res, next) => {
       sql: 'UPDATE products SET name = ?, category = ?, price = ?, quantity = ? WHERE id = ?',
       args: [name, category ?? null, Number(price), Number(quantity), req.params.id],
     });
-    if (result.rowsAffected === 0) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
+    if (result.rowsAffected === 0) return res.status(404).json({ message: 'Product not found' });
     res.status(200).json({ message: 'Product updated successfully' });
   } catch (err) {
     next(err);
   }
 });
 
-// DELETE /api/products/:id -> 200 { message } | 404
-router.delete('/:id', async (req, res, next) => {
+// PATCH /api/products/:id/stock (admin) -> 200 { message, quantity }
+// Body: { quantity: 12 } to set, or { delta: -2 } to adjust. Never below 0.
+router.patch('/:id/stock', requireAdmin, async (req, res, next) => {
+  const { quantity, delta } = req.body;
+  const hasQty = quantity !== undefined && quantity !== null && quantity !== '';
+  const hasDelta = delta !== undefined && delta !== null && delta !== '';
+
+  if (hasQty === hasDelta) {
+    return res.status(400).json({ message: 'Send either quantity or delta' });
+  }
+  const value = Number(hasQty ? quantity : delta);
+  if (!Number.isInteger(value) || (hasQty && value < 0)) {
+    return res.status(400).json({ message: 'Stock must be a whole number' });
+  }
+
   try {
-    const result = await db.execute({
-      sql: 'DELETE FROM products WHERE id = ?',
-      args: [req.params.id],
-    });
-    if (result.rowsAffected === 0) {
-      return res.status(404).json({ message: 'Product not found' });
-    }
+    const result = hasQty
+      ? await db.execute({ sql: 'UPDATE products SET quantity = ? WHERE id = ?', args: [value, req.params.id] })
+      : await db.execute({
+          sql: 'UPDATE products SET quantity = MAX(0, quantity + ?) WHERE id = ?',
+          args: [value, req.params.id],
+        });
+    if (result.rowsAffected === 0) return res.status(404).json({ message: 'Product not found' });
+
+    const after = await db.execute({ sql: 'SELECT quantity FROM products WHERE id = ?', args: [req.params.id] });
+    res.status(200).json({ message: 'Stock updated', quantity: Number(after.rows[0].quantity) });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// DELETE /api/products/:id (admin) -> 200 { message } | 404
+router.delete('/:id', requireAdmin, async (req, res, next) => {
+  try {
+    const result = await db.execute({ sql: 'DELETE FROM products WHERE id = ?', args: [req.params.id] });
+    if (result.rowsAffected === 0) return res.status(404).json({ message: 'Product not found' });
     res.status(200).json({ message: 'Product deleted successfully' });
   } catch (err) {
     next(err);

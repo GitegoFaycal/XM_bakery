@@ -6,18 +6,20 @@ import { useToast } from '../context/ToastContext.jsx';
 import Input from '../components/ui/Input.jsx';
 import Button from '../components/ui/Button.jsx';
 
+const homeFor = (user) => (user?.role === 'admin' ? '/dashboard' : '/orders');
+
 export default function Login() {
-  const { login, isAuthenticated } = useAuth();
+  const { login, isAuthenticated, user } = useAuth();
   const toast = useToast();
   const navigate = useNavigate();
   const location = useLocation();
-  const from = location.state?.from || '/dashboard';
+  const from = location.state?.from;
 
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState(null);
   const [submitting, setSubmitting] = useState(false);
 
-  if (isAuthenticated) return <Navigate to={from} replace />;
+  if (isAuthenticated) return <Navigate to={from || homeFor(user)} replace />;
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -30,9 +32,9 @@ export default function Login() {
     }
     setSubmitting(true);
     try {
-      const user = await login(form);
-      toast.success(`Welcome back, ${user.name}!`);
-      navigate(from, { replace: true });
+      const loggedIn = await login(form);
+      toast.success(`Welcome back, ${loggedIn.name}!`);
+      navigate(from || homeFor(loggedIn), { replace: true });
     } catch (err) {
       setError(err.message);
     } finally {
@@ -47,7 +49,7 @@ export default function Login() {
           <Croissant className="h-7 w-7" />
         </span>
         <h1 className="mt-4 font-display text-3xl font-bold text-stone-900">Welcome back</h1>
-        <p className="mt-1 text-sm text-stone-500">Log in to manage products and place orders.</p>
+        <p className="mt-1 text-sm text-stone-500">Log in to see your orders or run the bakery.</p>
       </div>
 
       <form

@@ -14,10 +14,17 @@ import Button from '../components/ui/Button.jsx';
 export const STATUS_TONE = {
   pending: 'warning',
   processing: 'brand',
-  ready: 'brand',
-  collected: 'success',
-  delivered: 'success',
+  ready: 'success',
+  collected: 'neutral',
   cancelled: 'danger',
+};
+
+export const STATUS_LABEL = {
+  pending: 'Pending',
+  processing: 'Being prepared',
+  ready: 'Ready for pickup',
+  collected: 'Collected',
+  cancelled: 'Cancelled',
 };
 
 export default function Orders() {
@@ -31,12 +38,12 @@ export default function Orders() {
     setError(null);
     try {
       if (isAuthenticated) {
-        const data = await getMyOrders(user.id);
+        const data = await getMyOrders();
         setOrders(Array.isArray(data) ? data : []);
       } else {
         // Guests: look up the order numbers remembered in this browser.
-        const ids = readGuestOrders();
-        const results = await Promise.allSettled(ids.map((id) => getOrder(id)));
+        const remembered = readGuestOrders();
+        const results = await Promise.allSettled(remembered.map((g) => getOrder(g.id, g.phone)));
         setOrders(results.filter((r) => r.status === 'fulfilled').map((r) => r.value));
       }
     } catch (err) {
@@ -106,11 +113,15 @@ export default function Orders() {
                       {count} item{count === 1 ? '' : 's'}
                     </td>
                     <td className="px-4 py-3">
-                      <Badge tone={STATUS_TONE[status] || 'neutral'}>{status}</Badge>
+                      <Badge tone={STATUS_TONE[status] || 'neutral'}>{STATUS_LABEL[status] || status}</Badge>
                     </td>
                     <td className="px-4 py-3 text-right font-medium text-stone-900">{formatPrice(o.total)}</td>
                     <td className="px-2 py-3 text-right">
-                      <Link to={`/orders/${o.id}`} className="inline-flex rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-800" aria-label={`View order ${o.id}`}>
+                      <Link
+                        to={`/orders/${o.id}`}
+                        className="inline-flex rounded-lg p-1.5 text-stone-400 hover:bg-stone-100 hover:text-stone-800"
+                        aria-label={`View order ${o.id}`}
+                      >
                         <ChevronRight className="h-4 w-4" />
                       </Link>
                     </td>

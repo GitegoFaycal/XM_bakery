@@ -1,11 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
-import { Pencil, Plus, Search, Trash2, PackageOpen, ExternalLink } from 'lucide-react';
+import { Pencil, Plus, Search, Trash2, PackageOpen, ExternalLink, Minus } from 'lucide-react';
 import useProducts, { uniqueCategories } from '../hooks/useProducts.js';
-import { createProduct, deleteProduct, updateProduct } from '../api/products.js';
+import { createProduct, deleteProduct, updateProduct, setStock } from '../api/products.js';
 import { useToast } from '../context/ToastContext.jsx';
 import { formatPrice } from '../utils/format.js';
 import PageHeader from '../components/PageHeader.jsx';
+import AdminTabs from '../components/AdminTabs.jsx';
 import ProductForm from '../components/ProductForm.jsx';
 import Spinner from '../components/ui/Spinner.jsx';
 import ErrorBanner from '../components/ui/ErrorBanner.jsx';
@@ -26,6 +27,7 @@ export default function ManageProducts() {
   const [editing, setEditing] = useState(null); // null | 'new' | product
   const [deleting, setDeleting] = useState(null);
   const [saving, setSaving] = useState(false);
+  const [stockBusy, setStockBusy] = useState(null);
 
   // Deep links: ?new=1 opens the create form, ?edit=<id> opens that product.
   useEffect(() => {
@@ -102,6 +104,18 @@ export default function ManageProducts() {
     }
   };
 
+  const adjustStock = async (product, delta) => {
+    setStockBusy(product.id);
+    try {
+      const res = await setStock(product.id, { delta });
+      setProducts((prev) => prev.map((p) => (p.id === product.id ? { ...p, quantity: res.quantity } : p)));
+    } catch (err) {
+      toast.error(err.message);
+    } finally {
+      setStockBusy(null);
+    }
+  };
+
   const handleDelete = async () => {
     if (!deleting) return;
     setSaving(true);
@@ -126,14 +140,15 @@ export default function ManageProducts() {
   return (
     <div>
       <PageHeader
-        title="Products"
-        subtitle="Create, edit and remove items on the shelf."
+        title="Products & stock"
+        subtitle="Add items, set prices, and keep stock counts right with the +/- buttons."
         actions={
           <Button onClick={() => setEditing('new')}>
             <Plus className="h-4 w-4" /> Add product
           </Button>
         }
       />
+      <AdminTabs />
 
       <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center">
         <div className="relative flex-1">
@@ -153,7 +168,7 @@ export default function ManageProducts() {
               key={f.key}
               onClick={() => setFilter(f.key)}
               className={`rounded-md px-3 py-1.5 text-sm font-medium transition ${
-                filter === f.key ? 'bg-brand-600 text-white' : 'text-stone-600 hover:bg-stone-100'
+                filter === f.key ? 'bg-brand-700 text-white' : 'text-stone-600 hover:bg-stone-100'
               }`}
             >
               {f.label}
@@ -170,11 +185,7 @@ export default function ManageProducts() {
         <EmptyState
           icon={PackageOpen}
           title={products.length === 0 ? 'No products yet' : 'Nothing matches'}
-          description={
-            products.length === 0
-              ? 'Add your first product to start selling.'
-              : 'Try another search or filter.'
-          }
+          description={products.length === 0 ? 'Add your first product to start selling.' : 'Try another search or filter.'}
           action={
             products.length === 0 && (
               <Button onClick={() => setEditing('new')}>
@@ -191,58 +202,87 @@ export default function ManageProducts() {
                 <th className="px-4 py-3">Product</th>
                 <th className="px-4 py-3">Category</th>
                 <th className="px-4 py-3 text-right">Price</th>
-                <th className="px-4 py-3 text-right">Qty</th>
+                <th className="px-4 py-3 text-center">Stock</th>
                 <th className="px-4 py-3">Status</th>
                 <th className="px-4 py-3 text-right">Actions</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-stone-100">
-              {visible.map((p) => (
-                <tr key={p.id} className="hover:bg-stone-50/60">
-                  <td className="px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <ProductImage product={p} className="h-10 w-10 rounded-lg" iconClass="h-5 w-5" />
-                      <div className="min-w-0">
-                        <p className="truncate font-medium text-stone-900">{p.name}</p>
-                        <p className="text-xs text-stone-400">ID {p.id}</p>
+              {visible.map((p) => {
+                const busy = stockBusy === p.id;
+                return (
+                  <tr key={p.id} className="hover:bg-stone-50/60">
+                    <td className="px-4 py-3">
+                      <div className="flex items-center gap-3">
+                        <ProductImage product={p} className="h-10 w-10 rounded-lg" iconClass="h-5 w-5" />
+                        <div className="min-w-0">
+                          <p className="truncate font-medium text-stone-900">{p.name}</p>
+                          <p className="text-xs text-stone-400">ID {p.id}</p>
+                        </div>
                       </div>
-                    </div>
-                  </td>
-                  <td className="px-4 py-3 text-stone-600">{p.category || '-'}</td>
-                  <td className="px-4 py-3 text-right font-medium text-stone-900">
-                    {formatPrice(p.price)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-stone-700">{p.quantity}</td>
-                  <td className="px-4 py-3">
-                    <Badge tone={stockTone(p.quantity)}>{stockLabel(p.quantity)}</Badge>
-                  </td>
-                  <td className="px-4 py-3">
-                    <div className="flex justify-end gap-1">
-                      <Link
-                        to={`/products/${p.id}`}
-                        className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
-                        title="View in shop"
-                      >
-                        <ExternalLink className="h-4 w-4" />
-                      </Link>
+                    </td>
+                    <td className="px-4 py-3 text-stone-600">{p.category || '-'}</td>
+                    <td className="px-4 py-3 text-right font-medium text-stone-900">{formatPrice(p.price)}</td>
+                    <td className="px-4 py-3">
+                      <div className="inline-flex items-center rounded-lg border border-stone-300 bg-white">
+                        <button
+                          onClick={() => adjustStock(p, -1)}
+                          disabled={busy || Number(p.quantity) <= 0}
+                          className="p-1.5 text-stone-600 hover:bg-stone-100 disabled:opacity-40"
+                          aria-label={`Remove one ${p.name} from stock`}
+                        >
+                          <Minus className="h-3.5 w-3.5" />
+                        </button>
+                        <span className="w-10 text-center text-sm font-semibold text-stone-900">{p.quantity}</span>
+                        <button
+                          onClick={() => adjustStock(p, 1)}
+                          disabled={busy}
+                          className="p-1.5 text-stone-600 hover:bg-stone-100 disabled:opacity-40"
+                          aria-label={`Add one ${p.name} to stock`}
+                        >
+                          <Plus className="h-3.5 w-3.5" />
+                        </button>
+                      </div>
                       <button
-                        onClick={() => setEditing(p)}
-                        className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
-                        title="Edit"
+                        onClick={() => adjustStock(p, 10)}
+                        disabled={busy}
+                        className="ml-1 rounded px-1.5 py-1 text-xs text-brand-700 hover:bg-brand-50 disabled:opacity-40"
+                        title="Add ten"
                       >
-                        <Pencil className="h-4 w-4" />
+                        +10
                       </button>
-                      <button
-                        onClick={() => setDeleting(p)}
-                        className="rounded-lg p-2 text-stone-500 hover:bg-red-50 hover:text-red-700"
-                        title="Delete"
-                      >
-                        <Trash2 className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
+                    </td>
+                    <td className="px-4 py-3">
+                      <Badge tone={stockTone(p.quantity)}>{stockLabel(p.quantity)}</Badge>
+                    </td>
+                    <td className="px-4 py-3">
+                      <div className="flex justify-end gap-1">
+                        <Link
+                          to={`/products/${p.id}`}
+                          className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+                          title="View in shop"
+                        >
+                          <ExternalLink className="h-4 w-4" />
+                        </Link>
+                        <button
+                          onClick={() => setEditing(p)}
+                          className="rounded-lg p-2 text-stone-500 hover:bg-stone-100 hover:text-stone-800"
+                          title="Edit"
+                        >
+                          <Pencil className="h-4 w-4" />
+                        </button>
+                        <button
+                          onClick={() => setDeleting(p)}
+                          className="rounded-lg p-2 text-stone-500 hover:bg-red-50 hover:text-red-700"
+                          title="Delete"
+                        >
+                          <Trash2 className="h-4 w-4" />
+                        </button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

@@ -1,30 +1,40 @@
 import { useEffect, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
-import { CheckCircle2, ArrowLeft, Phone, Mail, StickyNote } from 'lucide-react';
-import { getOrder } from '../api/orders.js';
+import { CheckCircle2, ArrowLeft, Phone, Mail, StickyNote, Lock } from 'lucide-react';
+import { getOrder, readGuestOrders } from '../api/orders.js';
+import { useAuth } from '../context/AuthContext.jsx';
 import { formatDate, formatPrice } from '../utils/format.js';
 import Spinner from '../components/ui/Spinner.jsx';
 import ErrorBanner from '../components/ui/ErrorBanner.jsx';
+import EmptyState from '../components/ui/EmptyState.jsx';
 import Button from '../components/ui/Button.jsx';
 import Badge from '../components/ui/Badge.jsx';
-import { STATUS_TONE } from './Orders.jsx';
+import { STATUS_LABEL, STATUS_TONE } from './Orders.jsx';
+
+const PAYMENT_LABEL = { unpaid: 'Pay at counter', paid: 'Paid', refunded: 'Refunded' };
 
 export default function OrderDetail() {
   const { id } = useParams();
   const { state } = useLocation();
+  const { isAuthenticated, isAdmin } = useAuth();
   const justPlaced = Boolean(state?.justPlaced);
 
   const [order, setOrder] = useState(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
+  const [forbidden, setForbidden] = useState(false);
 
   const load = async () => {
     setLoading(true);
     setError(null);
+    setForbidden(false);
     try {
-      setOrder(await getOrder(id));
+      // Guests unlock their order with the phone number they used.
+      const remembered = readGuestOrders().find((g) => String(g.id) === String(id));
+      setOrder(await getOrder(id, isAuthenticated ? undefined : remembered?.phone));
     } catch (err) {
-      setError(err.message);
+      if (err.status === 403) setForbidden(true);
+      else setError(err.message);
     } finally {
       setLoading(false);
     }
@@ -33,9 +43,27 @@ export default function OrderDetail() {
   useEffect(() => {
     load();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [id]);
+  }, [id, isAuthenticated]);
 
   if (loading) return <Spinner />;
+  if (forbidden) {
+    return (
+      <EmptyState
+        icon={Lock}
+        title="This order belongs to someone else"
+        description={
+          isAuthenticated
+            ? 'Only the person who placed it and bakery staff can see it.'
+            : 'Log in with the account that placed it, or open it from the device you ordered on.'
+        }
+        action={
+          <Link to={isAuthenticated ? '/orders' : '/login'}>
+            <Button>{isAuthenticated ? 'My orders' : 'Log in'}</Button>
+          </Link>
+        }
+      />
+    );
+  }
   if (error) return <ErrorBanner message={error} onRetry={load} />;
   if (!order) return null;
 
@@ -57,8 +85,11 @@ export default function OrderDetail() {
           </p>
         </div>
       ) : (
-        <Link to="/orders" className="mb-6 inline-flex items-center gap-1 text-sm text-stone-600 hover:text-stone-900">
-          <ArrowLeft className="h-4 w-4" /> All orders
+        <Link
+          to={isAdmin ? '/dashboard/orders' : '/orders'}
+          className="mb-6 inline-flex items-center gap-1 text-sm text-stone-600 hover:text-stone-900"
+        >
+          <ArrowLeft className="h-4 w-4" /> {isAdmin ? 'All orders' : 'My orders'}
         </Link>
       )}
 
@@ -69,9 +100,9 @@ export default function OrderDetail() {
             <p className="text-xs text-stone-500">{formatDate(order.created_at)}</p>
           </div>
           <div className="flex items-center gap-2">
-            <Badge tone={STATUS_TONE[status] || 'neutral'}>{status}</Badge>
-            <Badge tone={order.payment_status === 'paid' ? 'success' : 'warning'}>
-              {order.payment_status === 'paid' ? 'Paid' : 'Pay at counter'}
+            <Badge tone={STATUS_TONE[status] || 'neutral'}>{STATUS_LABEL[status] || status}</Badge>
+            <Badge tone={order.payment_status === 'paid' ? 'success' : order.payment_status === 'refunded' ? 'neutral' : 'warning'}>
+              {PAYMENT_LABEL[order.payment_status] || order.payment_status}
             </Badge>
           </div>
         </div>
@@ -117,8 +148,8 @@ export default function OrderDetail() {
         <Link to="/products">
           <Button variant="secondary">Keep shopping</Button>
         </Link>
-        <Link to="/orders">
-          <Button>My orders</Button>
+        <Link to={isAdmin ? '/dashboard/orders' : '/orders'}>
+          <Button>{isAdmin ? 'Manage orders' : 'My orders'}</Button>
         </Link>
       </div>
     </div>

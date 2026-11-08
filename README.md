@@ -69,19 +69,40 @@ driver, a generous free tier, and for local development a plain file on disk.
 
 | Method | Path                  | Body                                 | Response                                   |
 | ------ | --------------------- | ------------------------------------ | ------------------------------------------ |
-| POST   | `/api/auth/register`  | `{ name, email, password }`          | `201 { message, userId }`                  |
-| POST   | `/api/auth/login`     | `{ email, password }`                | `200 { message, user: { id, name, email } }` |
-| GET    | `/api/products`       |                                      | `200 [ { id, name, category, price, quantity } ]` |
-| GET    | `/api/products/:id`   |                                      | `200 product` or `404`                     |
-| POST   | `/api/products`       | `{ name, category, price, quantity }`| `201 { message, productId }`               |
-| PUT    | `/api/products/:id`   | `{ name, category, price, quantity }`| `200 { message }` or `404`                 |
-| DELETE | `/api/products/:id`   |                                      | `200 { message }` or `404`                 |
-| POST   | `/api/orders`         | `{ user_id?, customer_name?, phone?, email?, note?, items: [{ product_id, quantity }] }` | `201 { message, orderId, order }`, `409` if stock is short |
-| GET    | `/api/orders?user_id=`| (or `?email=`)                       | `200 [ order ]`                            |
-| GET    | `/api/orders/:id`     |                                      | `200 order` with `items`, or `404`         |
+Send `Authorization: Bearer <token>` for routes marked *auth* or *admin*.
 
-Orders work for guests (name + phone) and members (`user_id`). Prices are
-taken from the products table on the server and stock is reduced in the same
-transaction. Payment is "pay at counter"; `payment_method` and
-`payment_status` columns are ready for an online gateway (MTN MoMo / Airtel
-Money via Flutterwave or Paypack, or Stripe) once a merchant account exists.
+| Method | Path                        | Who     | Body / query                                    | Response                                   |
+| ------ | --------------------------- | ------- | ----------------------------------------------- | ------------------------------------------ |
+| POST   | `/api/auth/register`        | public  | `{ name, email, password }`                     | `201 { token, user }`                      |
+| POST   | `/api/auth/login`           | public  | `{ email, password }`                           | `200 { token, user: { id, name, email, role } }` |
+| GET    | `/api/auth/me`              | auth    |                                                 | `200 { user }`                             |
+| GET    | `/api/products`             | public  |                                                 | `200 [ product ]`                          |
+| GET    | `/api/products/:id`         | public  |                                                 | `200 product` or `404`                     |
+| POST   | `/api/products`             | admin   | `{ name, category, price, quantity }`           | `201 { message, productId }`               |
+| PUT    | `/api/products/:id`         | admin   | `{ name, category, price, quantity }`           | `200 { message }` or `404`                 |
+| PATCH  | `/api/products/:id/stock`   | admin   | `{ delta: -2 }` or `{ quantity: 12 }`           | `200 { message, quantity }`                |
+| DELETE | `/api/products/:id`         | admin   |                                                 | `200 { message }` or `404`                 |
+| POST   | `/api/orders`               | public  | `{ customer_name?, phone?, email?, note?, items: [{ product_id, quantity }] }` | `201 { orderId, order }`, `409` if stock is short |
+| GET    | `/api/orders`               | auth    | admin may add `?status=`                        | own orders, or every order for admins      |
+| GET    | `/api/orders/:id`           | mixed   | guests add `?phone=` used on the order          | `200 order`, `403` if not yours            |
+| PATCH  | `/api/orders/:id`           | admin   | `{ status?, payment_status? }`                  | `200 { order }`; cancelling restocks items |
+
+Order statuses: `pending → processing → ready → collected`, or `cancelled`.
+Payment statuses: `unpaid`, `paid`, `refunded`.
+
+### Roles
+
+Everyone who registers is a `customer`. Accounts whose email appears in the
+`ADMIN_EMAILS` environment variable (comma separated) become `admin` on
+sign-up or next login, which unlocks the dashboard, stock controls and order
+management. To promote an existing account from the command line:
+
+```bash
+cd backend && npm run make-admin -- someone@example.com
+```
+
+Guests can order with a name and phone number. Prices are taken from the
+products table on the server and stock is reduced in the same transaction.
+Payment is "pay at counter"; `payment_method` and `payment_status` are ready
+for an online gateway (MTN MoMo / Airtel Money via Flutterwave or Paypack, or
+Stripe) once a merchant account exists.

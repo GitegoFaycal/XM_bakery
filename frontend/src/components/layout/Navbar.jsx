@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link, NavLink, useNavigate } from 'react-router-dom';
-import { Croissant, ShoppingBag, Menu, X, LogOut, LayoutDashboard, User } from 'lucide-react';
+import { Croissant, ShoppingBag, Menu, X, LogOut, User, ShieldCheck } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext.jsx';
 import { useCart } from '../../context/CartContext.jsx';
 import Button from '../ui/Button.jsx';
@@ -11,7 +11,7 @@ const linkClass = ({ isActive }) =>
   }`;
 
 export default function Navbar() {
-  const { user, isAuthenticated, logout } = useAuth();
+  const { user, isAuthenticated, isAdmin, logout } = useAuth();
   const { count } = useCart();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -33,12 +33,20 @@ export default function Navbar() {
       <NavLink to="/orders" className={linkClass} onClick={() => setOpen(false)}>
         My Orders
       </NavLink>
-      {isAuthenticated && (
+      {isAdmin && (
         <NavLink to="/dashboard" className={linkClass} onClick={() => setOpen(false)}>
           Dashboard
         </NavLink>
       )}
     </>
+  );
+
+  const userChip = (
+    <span className="flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-1.5 text-sm text-stone-700">
+      {isAdmin ? <ShieldCheck className="h-4 w-4 text-brand-700" /> : <User className="h-4 w-4" />}
+      {user?.name}
+      {isAdmin && <span className="ml-1 rounded bg-brand-700 px-1.5 text-[10px] font-semibold uppercase text-white">staff</span>}
+    </span>
   );
 
   return (
@@ -71,10 +79,7 @@ export default function Navbar() {
 
           {isAuthenticated ? (
             <div className="hidden items-center gap-2 md:flex">
-              <span className="flex items-center gap-1.5 rounded-lg bg-stone-100 px-3 py-1.5 text-sm text-stone-700">
-                <User className="h-4 w-4" />
-                {user.name}
-              </span>
+              {userChip}
               <Button variant="ghost" size="sm" onClick={handleLogout}>
                 <LogOut className="h-4 w-4" /> Logout
               </Button>
@@ -107,9 +112,7 @@ export default function Navbar() {
           <div className="mt-3 flex flex-col gap-2 border-t border-stone-200 pt-3">
             {isAuthenticated ? (
               <>
-                <span className="flex items-center gap-1.5 px-3 text-sm text-stone-600">
-                  <User className="h-4 w-4" /> {user.name}
-                </span>
+                <div className="px-1">{userChip}</div>
                 <Button variant="secondary" onClick={handleLogout}>
                   <LogOut className="h-4 w-4" /> Logout
                 </Button>
@@ -131,7 +134,7 @@ export default function Navbar() {
                     navigate('/register');
                   }}
                 >
-                  <LayoutDashboard className="h-4 w-4" /> Sign up
+                  Sign up
                 </Button>
               </>
             )}

@@ -1,11 +1,19 @@
 import express from 'express';
 import bcrypt from 'bcryptjs';
 import db, { toId } from '../config/db.js';
+import { isAdminEmail, requireAuth, signToken } from '../middleware/auth.js';
 
 const router = express.Router();
 const SALT_ROUNDS = Number(process.env.BCRYPT_SALT_ROUNDS) || 10;
 
-// POST /api/auth/register -> 201 { message, userId }
+const publicUser = (row) => ({
+  id: toId(row.id),
+  name: row.name,
+  email: row.email,
+  role: row.role || 'customer',
+});
+
+// POST /api/auth/register -> 201 { message, userId, token, user }
 router.post('/register', async (req, res, next) => {
   const { name, email, password } = req.body;
 
@@ -14,30 +22,31 @@ router.post('/register', async (req, res, next) => {
   }
 
   try {
-    const existing = await db.execute({
-      sql: 'SELECT id FROM users WHERE email = ?',
-      args: [email],
-    });
+    const existing = await db.execute({ sql: 'SELECT id FROM users WHERE email = ?', args: [email] });
     if (existing.rows.length > 0) {
       return res.status(409).json({ message: 'Email already registered' });
     }
 
+    const role = isAdminEmail(email) ? 'admin' : 'customer';
     const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
     const result = await db.execute({
-      sql: 'INSERT INTO users (name, email, password) VALUES (?, ?, ?)',
-      args: [name, email, hashedPassword],
+      sql: 'INSERT INTO users (name, email, password, role) VALUES (?, ?, ?, ?)',
+      args: [name, email, hashedPassword, role],
     });
 
+    const user = { id: toId(result.lastInsertRowid), name, email, role };
     res.status(201).json({
       message: 'User registered successfully',
-      userId: toId(result.lastInsertRowid),
+      userId: user.id,
+      token: signToken(user),
+      user,
     });
   } catch (err) {
     next(err);
   }
 });
 
-// POST /api/auth/login -> 200 { message, user: { id, name, email } }
+// POST /api/auth/login -> 200 { message, token, user: { id, name, email, role } }
 router.post('/login', async (req, res, next) => {
   const { email, password } = req.body;
 
@@ -47,19 +56,37 @@ router.post('/login', async (req, res, next) => {
 
   try {
     const result = await db.execute({
-      sql: 'SELECT id, name, email, password FROM users WHERE email = ?',
+      sql: 'SELECT id, name, email, password, role FROM users WHERE email = ?',
       args: [email],
     });
-    const user = result.rows[0];
+    const row = result.rows[0];
 
-    if (!user || !(await bcrypt.compare(password, user.password))) {
+    if (!row || !(await bcrypt.compare(password, row.password))) {
       return res.status(401).json({ message: 'Invalid credentials' });
     }
 
-    res.status(200).json({
-      message: 'Login successful',
-      user: { id: toId(user.id), name: user.name, email: user.email },
+    // Promote on login if the address was added to ADMIN_EMAILS after sign-up.
+    if (row.role !== 'admin' && isAdminEmail(row.email)) {
+      await db.execute({ sql: "UPDATE users SET role = 'admin' WHERE id = ?", args: [row.id] });
+      row.role = 'admin';
+    }
+
+    const user = publicUser(row);
+    res.status(200).json({ message: 'Login successful', token: signToken(user), user });
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/auth/me -> 200 { user } (fresh from the database)
+router.get('/me', requireAuth, async (req, res, next) => {
+  try {
+    const result = await db.execute({
+      sql: 'SELECT id, name, email, role FROM users WHERE id = ?',
+      args: [req.user.id],
     });
+    if (result.rows.length === 0) return res.status(401).json({ message: 'Account no longer exists' });
+    res.status(200).json({ user: publicUser(result.rows[0]) });
   } catch (err) {
     next(err);
   }

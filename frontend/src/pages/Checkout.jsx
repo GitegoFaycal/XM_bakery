@@ -52,14 +52,13 @@ export default function Checkout() {
     setSubmitting(true);
     try {
       const res = await placeOrder({
-        userId: isAuthenticated ? user.id : null,
         customerName: form.name.trim(),
         phone: form.phone.trim(),
         email: form.email.trim(),
         note: form.note.trim(),
         items,
       });
-      if (!isAuthenticated) rememberGuestOrder(res.orderId);
+      if (!isAuthenticated) rememberGuestOrder(res.orderId, form.phone.trim());
       placedRef.current = true;
       navigate(`/orders/${res.orderId}`, { replace: true, state: { justPlaced: true } });
       clear();

@@ -22,6 +22,12 @@ export function deleteProduct(id) {
   return api.delete(`/products/${id}`);
 }
 
+// PATCH /api/products/:id/stock -> { message, quantity }
+// Pass { delta: -1 } to adjust or { quantity: 12 } to set.
+export function setStock(id, change) {
+  return api.patch(`/products/${id}/stock`, change);
+}
+
 function normalise({ name, category, price, quantity }) {
   return {
     name: String(name || '').trim(),

@@ -16,7 +16,7 @@ export default function ProductDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { addItem, items } = useCart();
-  const { isAuthenticated } = useAuth();
+  const { isAdmin } = useAuth();
   const toast = useToast();
 
   const [product, setProduct] = useState(null);
@@ -141,7 +141,7 @@ export default function ProductDetail() {
             )}
           </div>
 
-          {isAuthenticated && (
+          {isAdmin && (
             <Link
               to={`/dashboard/products?edit=${product.id}`}
               className="mt-4 inline-flex items-center gap-1 self-start text-sm text-stone-500 hover:text-stone-800"
